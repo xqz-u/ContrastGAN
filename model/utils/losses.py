@@ -1,7 +1,6 @@
 # import necessary modules
 import torch
 import torch.nn as nn
-
 from torch import Tensor
 
 
@@ -61,15 +60,19 @@ class HULoss(nn.Module):
     def forward(self, input: Tensor, mask: Tensor) -> Tensor:
         input_masked = torch.masked_select(input, mask)
 
-        loss_min = torch.mean((torch.minimum(input_masked, torch.tensor(self.min)) - self.min) ** 2)
-        loss_max = torch.mean((torch.maximum(input_masked, torch.tensor(self.max)) - self.max) ** 2)
+        loss_min = torch.mean(
+            (torch.minimum(input_masked, torch.tensor(self.min)) - self.min) ** 2
+        )
+        loss_max = torch.mean(
+            (torch.maximum(input_masked, torch.tensor(self.max)) - self.max) ** 2
+        )
         return loss_min + loss_max
 
 
 class WassersteinLoss(nn.Module):
     @staticmethod
     def forward(input, target=None) -> Tensor:
-        if target:
+        if target is not None:
             return torch.mean(input) - torch.mean(target)
         else:
             return torch.mean(input)

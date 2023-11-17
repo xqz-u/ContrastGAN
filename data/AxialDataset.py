@@ -1,18 +1,19 @@
 # import necessary modules
-import numpy as np
-import os
-import pandas as pd
 import random
-import torch
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import torch
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import Dataset
+
 from .H5Dataset import H5Dataset
 
 
 class AxialSliceDataset(Dataset):
     def __init__(self, config, mode="train", opt="opt"):
-        self.dir_data = config["data_dir"]              # root directory for datasets
+        self.dir_data = Path(config["data_dir"])              # root directory for datasets
         self.fold = config["fold"]                      # 5-fold cross-validation index
 
         self.n_slices = config["n_slices"]              # number of axial slices to generate at once
@@ -30,7 +31,7 @@ class AxialSliceDataset(Dataset):
         self.sheet_low = {}                             # below optimal contrast scans
         self.sheet_high = {}                            # above optimal contrast scans
         for dataset in config["datasets"]:
-            sheet_ostia = pd.read_excel(os.path.join(self.dir_data, dataset, "ostia.xlsx"))
+            sheet_ostia = pd.read_excel(self.dir_data / dataset / "ostia.xlsx")
 
             # filter out unreliable stuff
             sheet_ostia = sheet_ostia.iloc[sheet_ostia.groupby("ID").apply(lambda x: x["std"].idxmin())]
@@ -45,11 +46,14 @@ class AxialSliceDataset(Dataset):
             self.sheet_optimal[dataset] = sheet_optimal
             self.sheet_low[dataset] = sheet_low
             self.sheet_high[dataset] = sheet_high
+            skipped = 0
             for i, sheet in enumerate((sheet_low, sheet_optimal, sheet_high)):
                 for id_ in list(sheet["ID"]):
-                    image = id_
-                    id_ = os.path.join(self.dir_data, dataset, "image", "image" + id_, image + ".h5")
-
+                    id_ = self.dir_data / dataset / "image" / f"image{id_}" / f"{id_}.h5"
+                    if not id_.is_file():
+                        # print(f"Skipping inexistent file {str(id_)}")
+                        skipped += 1
+                        continue
                     self.id_list.append(id_)
                     self.label[id_] = int(i)            # 0 = below, 1 = optimal, 2 = above
 
@@ -76,8 +80,12 @@ class AxialSliceDataset(Dataset):
         elif mode == "val":
             self.id_list = list(set(self.folds[self.fold][1]) & set(id_list))
 
+        print(len(self), opt, mode)
+        print(f"Skipped {skipped} scans for opt={opt} mode={mode}")
+        print("-------")
+
     def norm(self, image):
-        return (image + self.bias) / self.norm
+        return (image + self.bias) / self.factor
 
     def __len__(self):
         return len(self.id_list)
@@ -90,7 +98,7 @@ class AxialSliceDataset(Dataset):
         slice = slice.transpose(2, 0, 1)
 
         if self.normalize:
-            slice = self.normalize(slice)
+            slice = self.norm(slice)
         return torch.from_numpy(slice.copy()).float()
 
 
@@ -120,5 +128,6 @@ class AxialPatchDataset(AxialSliceDataset):
         mask = mask.transpose(2, 0, 1)
 
         if self.normalize:
-            patch = self.normalize(patch)
+            patch = self.norm(patch)
+        return torch.from_numpy(patch.copy()).float(), torch.from_numpy(mask.copy())
         return torch.from_numpy(patch.copy()).float(), torch.from_numpy(mask.copy())
